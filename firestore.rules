@@ -1,0 +1,211 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// This security rules file assumes the following data structures:
+//
+// Collection: entries
+// Document ID: {entryId} (UUID or slug-based identifier)
+// Fields:
+//   - id: string (required, immutable, 1..128 chars) - Unique entry identifier
+//   - title: string (required, 1..300 chars) - Entry title
+//   - slug: string (required, 1..300 chars) - URL-friendly slug
+//   - date: string (required, 1..64 chars) - ISO 8601 date string
+//   - dayCategory: string (required, enum) - One of:
+//       ['LUNES_TECNICA', 'MARTES_HERRAMIENTA', 'MIERCOLES_CASO', 'JUEVES_NOVEDAD', 'VIERNES_RETO']
+//   - tags: list (required, <= 30 items) - List of topic tags
+//   - summary: string (required, <= 2000 chars) - Short summary of the capsule
+//   - content: string (required, <= 150000 chars) - Markdown body content
+//   - metadata: map (required) - Category-specific metadata map with allowed keys:
+//       - pricingModel: string or null (optional, in ['Gratuita', 'Freemium', 'De Pago'])
+//       - toolUrl: string or null (optional, <= 2048 chars)
+//       - osCompatibility: string or null (optional, <= 500 chars)
+//       - sourceUrl: string or null (optional, <= 2048 chars)
+//       - difficulty: string or null (optional, in ['Básico', 'Intermedio', 'Avanzado'])
+//       - caseStatus: string or null (optional, in ['Resuelto', 'Pendiente'])
+//       - toolsUsed: list or null (optional, <= 50 items)
+//       - challengeCompleted: bool (optional)
+//       - checklist: list or null (optional, <= 50 items)
+//   - isFavorite: bool (required) - Whether the entry is marked as favorite
+//   - readingTimeMinutes: number (required, 1..240) - Estimated reading time in minutes
+//   - createdAt: string (optional, immutable, <= 64 chars) - Creation timestamp string
+//   - updatedAt: string (optional, <= 64 chars) - Last update timestamp string
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if the authenticated user is an administrator provisioned in Firebase Auth via Email/Password
+    function isAdmin() {
+      return isAuthenticated() &&
+             request.auth.token.firebase.sign_in_provider == 'password';
+    }
+
+    // Validate required fields exist on the incoming document
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Validate that the incoming document contains only allowed fields
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // Validate string length bounds
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+             request.resource.data[field].size() >= minLen &&
+             request.resource.data[field].size() <= maxLen;
+    }
+
+    // Validate optional string field length bounds
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+
+    // Validate ISO 8601 date string format (supports YYYY-MM-DD and full ISO timestamps)
+    function isValidDateString(dateStr) {
+      return dateStr is string &&
+             dateStr.size() >= 1 &&
+             dateStr.size() <= 64 &&
+             dateStr.matches("^\\d{4}-\\d{2}-\\d{2}.*$");
+    }
+
+    // Validate that a list enforces size limits
+    function isValidList(list, maxSize) {
+      return list is list && list.size() <= maxSize;
+    }
+
+    // Validate that a map contains only allowed keys
+    function isValidMap(mapData, allowedKeys) {
+      return mapData is map && mapData.keys().hasOnly(allowedKeys);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    // Validate the nested metadata map inside an entry document
+    function isValidEntryMetadata(meta) {
+      let allowedMetaKeys = [
+        'pricingModel',
+        'toolUrl',
+        'osCompatibility',
+        'sourceUrl',
+        'difficulty',
+        'caseStatus',
+        'toolsUsed',
+        'challengeCompleted',
+        'checklist'
+      ];
+      return isValidMap(meta, allowedMetaKeys) &&
+             (!('pricingModel' in meta) || meta.pricingModel == null || meta.pricingModel in ['Gratuita', 'Freemium', 'De Pago']) &&
+             (!('toolUrl' in meta) || meta.toolUrl == null || (meta.toolUrl is string && meta.toolUrl.size() <= 2048)) &&
+             (!('osCompatibility' in meta) || meta.osCompatibility == null || (meta.osCompatibility is string && meta.osCompatibility.size() <= 500)) &&
+             (!('sourceUrl' in meta) || meta.sourceUrl == null || (meta.sourceUrl is string && meta.sourceUrl.size() <= 2048)) &&
+             (!('difficulty' in meta) || meta.difficulty == null || meta.difficulty in ['Básico', 'Intermedio', 'Avanzado']) &&
+             (!('caseStatus' in meta) || meta.caseStatus == null || meta.caseStatus in ['Resuelto', 'Pendiente']) &&
+             (!('toolsUsed' in meta) || meta.toolsUsed == null || isValidList(meta.toolsUsed, 50)) &&
+             (!('challengeCompleted' in meta) || meta.challengeCompleted is bool) &&
+             (!('checklist' in meta) || meta.checklist == null || isValidList(meta.checklist, 50));
+    }
+
+    // Validate the complete schema and constraints for an OSINT entry document
+    function isValidEntry(data) {
+      let requiredFields = [
+        'id',
+        'title',
+        'slug',
+        'date',
+        'dayCategory',
+        'tags',
+        'summary',
+        'content',
+        'metadata',
+        'isFavorite',
+        'readingTimeMinutes'
+      ];
+      let allowedFields = [
+        'id',
+        'title',
+        'slug',
+        'date',
+        'dayCategory',
+        'tags',
+        'summary',
+        'content',
+        'metadata',
+        'isFavorite',
+        'readingTimeMinutes',
+        'createdAt',
+        'updatedAt'
+      ];
+      let validCategories = [
+        'LUNES_TECNICA',
+        'MARTES_HERRAMIENTA',
+        'MIERCOLES_CASO',
+        'JUEVES_NOVEDAD',
+        'VIERNES_RETO'
+      ];
+
+      return hasRequiredFields(requiredFields) &&
+             hasOnlyAllowedFields(allowedFields) &&
+             validStringLength('id', 1, 128) &&
+             validStringLength('title', 1, 300) &&
+             validStringLength('slug', 1, 300) &&
+             isValidDateString(data.date) &&
+             data.dayCategory is string &&
+             data.dayCategory in validCategories &&
+             isValidList(data.tags, 30) &&
+             validStringLength('summary', 0, 2000) &&
+             validStringLength('content', 0, 150000) &&
+             isValidEntryMetadata(data.metadata) &&
+             data.isFavorite is bool &&
+             data.readingTimeMinutes is number &&
+             data.readingTimeMinutes >= 1 &&
+             data.readingTimeMinutes <= 240 &&
+             isValidOptionalString('createdAt', 1, 64) &&
+             isValidOptionalString('updatedAt', 1, 64);
+    }
+
+    // Ensure immutable fields cannot be modified on update
+    function isValidEntryUpdate() {
+      return request.resource.data.id == resource.data.id &&
+             (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt);
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /entries/{entryId} {
+      // Public read access for the OSINT Daily Knowledge Base
+      allow get, list: if true;
+
+      // Write operations strictly restricted to the verified administrator
+      allow create: if isAdmin() && isValidEntry(request.resource.data);
+      allow update: if isAdmin() && isValidEntry(request.resource.data) && isValidEntryUpdate();
+      allow delete: if isAdmin();
+    }
+
+    // Default deny for all other collections and documents
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

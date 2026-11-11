@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      try {
+        const storedScheme = localStorage.getItem('color-scheme');
+        const meta = document.querySelector('meta[name="color-scheme"]');
+        if (meta) {
+          meta.content = storedScheme ?? 'light dark';
+        }
+        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const isDark = storedScheme ? storedScheme === 'dark' : prefersDark;
+        document.documentElement.classList.toggle('dark', isDark);
+      } catch (e) {}
+    </script>
+    <title>OSINT Daily Knowledge Base — Cápsulas de Inteligencia de Fuentes Abiertas</title>
+    <meta
+      name="description"
+      content="Base de conocimiento diaria sobre OSINT: técnicas de investigación, herramientas, casos prácticos, actualidad y retos express."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="min-h-dvh antialiased selection:bg-cyan-500/20 selection:text-cyan-400">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
