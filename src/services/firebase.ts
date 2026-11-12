@@ -33,13 +33,13 @@ import {
 } from '../types/osint';
 
 const firebaseConfig = {
-  projectId: 'blogosint',
-  appId: '1:11775117232:web:66e0d7b7d2bcae2465f875',
-  storageBucket: 'blogosint.firebasestorage.app',
-  apiKey: 'AIzaSyDdTpyPXLJKtMtGA1u82gNCwJjOWGYgka8',
-  authDomain: 'blogosint.firebaseapp.com',
-  messagingSenderId: '11775117232',
-  measurementId: 'G-46CKP1QC1D',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || 'blogosint',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || 'blogosint.firebasestorage.app',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'blogosint.firebaseapp.com',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || '',
 };
 
 export const app = initializeApp(firebaseConfig);
